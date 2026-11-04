@@ -1,0 +1,39 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stackroost
+          POSTGRES_PASSWORD: stackroost
+          POSTGRES_DB: stackroost
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U stackroost" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://stackroost:stackroost@localhost:5432/stackroost
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy # migrations must apply cleanly to an empty DB
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+      - run: npm run test:integration # same flows on real Postgres (raw SQL, locks, stats)
+        env:
+          DATABASE_URL_TEST: postgresql://stackroost:stackroost@localhost:5432/stackroost
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
